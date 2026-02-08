@@ -17,6 +17,8 @@ type Server struct {
 	IP string
 	// 服务绑定的端口
 	Port int
+	// Server注册的连接 对应的处理业务
+	Router ziface.IRouter
 }
 
 // 当前客户端连接的 handle api
@@ -64,8 +66,8 @@ func (s *Server) Start() {
 			}
 			// TODO 3.2 设置服务器最大连接控制，如果超过最大连接，则关闭新的连接
 
-			// TODO 3.3 处理该新连接请求的业务方法，此时 handler 和 conn 应该是绑定的
-			dealConn := NewConnection(conn, cid, CallBackToClient)
+			// TODO 3.3 处理该新连接请求的业务方法
+			dealConn := NewConnection(conn, cid, s.Router)
 			cid++
 
 			// 3.4 启动当前连接的处理业务
@@ -91,6 +93,13 @@ func (s *Server) Serve() {
 	select {}
 }
 
+// 注册路由业务方法，供客户端连接处理使用
+func (s *Server) AddRouter(router ziface.IRouter) {
+	s.Router = router
+
+	fmt.Println("[START] AddRouter success")
+}
+
 // 创建服务器句柄
 func NewServe(name string) ziface.IServer {
 	s := &Server{
@@ -98,6 +107,7 @@ func NewServe(name string) ziface.IServer {
 		IPVersion: "tcp4",
 		IP:        "0.0.0.0",
 		Port:      7777,
+		Router:    nil,
 	}
 	return s
 }
