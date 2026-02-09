@@ -3,7 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"github.com/Txinkang/zinx/ziface"
-	"io/ioutil"
+	"os"
 )
 
 type GlobalObj struct {
@@ -22,13 +22,13 @@ var GlobalObject *GlobalObj
 
 // 读取用户配置文件
 func (g *GlobalObj) Reload() {
-	data, err := ioutil.ReadFile("conf/zinx.json")
+	data, err := os.ReadFile("conf/zinx.json")
 	if err != nil {
 		panic(err)
 	}
 
 	// 解析json到struct中
-	err = json.Unmarshal(data, GlobalObject)
+	err = json.Unmarshal(data, g)
 	if err != nil {
 		panic(err)
 	}
