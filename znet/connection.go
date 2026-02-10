@@ -1,8 +1,10 @@
 package znet
 
 import (
+	"errors"
 	"fmt"
 	"github.com/Txinkang/zinx/ziface"
+	"io"
 	"net"
 )
 
@@ -36,20 +38,43 @@ func (c *Connection) StartReader() {
 	defer fmt.Println(c.RemoteAddr().String(), "StartReader Goroutine is Stopped")
 	defer c.Stop()
 	for {
+		// 创建封包拆包的对象
+		dp := NewDataPack()
+
 		// 读取数据到buf
-		buf := make([]byte, 512)
-		_, err := c.Conn.Read(buf)
-		if err != nil {
+		headData := make([]byte, dp.GetHeadLen())
+		if _, err := io.ReadFull(c.GetTCPConnection(), headData); err != nil {
 			fmt.Println("Read Error:", err)
 			c.ExitBuffChan <- true
 			continue
 		}
 
+		// 拆包，获取头信息
+		msg, err := dp.UnPack(headData)
+		if err != nil {
+			fmt.Println("UnPack Error:", err)
+			c.ExitBuffChan <- true
+			continue
+		}
+
+		// 获取data
+		var data []byte
+		if msg.GetDataLen() > 0 {
+			data = make([]byte, msg.GetDataLen())
+			if _, err := io.ReadFull(c.GetTCPConnection(), data); err != nil {
+				fmt.Println("Read Error:", err)
+				c.ExitBuffChan <- true
+				continue
+			}
+		}
+		msg.SetData(data)
+
 		// 获取当前客户端的Request
 		req := Request{
 			conn: c,
-			data: buf,
+			msg:  msg,
 		}
+
 		// 调用业务
 		go func(request ziface.IRequest) {
 			c.Router.PreHandle(request)
@@ -59,7 +84,6 @@ func (c *Connection) StartReader() {
 	}
 }
 
-// 启动连接、让当前连接开始工作
 func (c *Connection) Start() {
 	// 开启业务
 	go c.StartReader()
@@ -99,4 +123,23 @@ func (c *Connection) GetConnID() uint32 {
 }
 func (c *Connection) RemoteAddr() net.Addr {
 	return c.Conn.RemoteAddr()
+}
+func (c *Connection) SendMsg(msgId uint32, data []byte) error {
+	if c.isClosed {
+		return errors.New("Connection is Closed")
+	}
+
+	// 封包发出
+	dp := NewDataPack()
+	msg, err := dp.Pack(NewMsgPackage(msgId, data))
+	if err != nil {
+		fmt.Println("Pack Error:", err)
+		return errors.New("pack Error")
+	}
+	if _, err := c.Conn.Write(msg); err != nil {
+		fmt.Println("Write Error:", err)
+		c.ExitBuffChan <- true
+		return errors.New("Write Error")
+	}
+	return nil
 }

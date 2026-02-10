@@ -14,6 +14,8 @@ type IConnection interface {
 	GetConnID() uint32
 	// 获取远程客户端地址信息
 	RemoteAddr() net.Addr
+	//发送message数据到客户端
+	SendMsg(msgId uint32, data []byte) error
 }
 
 // HandFunc 统一处理连接业务的接口,socket原声连接、请求数据、请求数据长度
