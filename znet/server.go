@@ -1,7 +1,6 @@
 package znet
 
 import (
-	"errors"
 	"fmt"
 	"github.com/Txinkang/zinx/utils"
 	"github.com/Txinkang/zinx/ziface"
@@ -18,18 +17,8 @@ type Server struct {
 	IP string
 	// 服务绑定的端口
 	Port int
-	// Server注册的连接 对应的处理业务
-	Router ziface.IRouter
-}
-
-// 当前客户端连接的 handle api
-func CallBackToClient(conn *net.TCPConn, data []byte, cnt int) error {
-	fmt.Println("CallBackToClient")
-	if _, err := conn.Write(data[:cnt]); err != nil {
-		fmt.Println("CallBackToClient Write err:", err)
-		return errors.New("CallBackToClient err")
-	}
-	return nil
+	// 消息管理模块，用来绑定msgId和对应的处理方法
+	msgHandler ziface.IMsgHandle
 }
 
 // 启动服务器
@@ -69,7 +58,7 @@ func (s *Server) Start() {
 			// TODO 3.2 设置服务器最大连接控制，如果超过最大连接，则关闭新的连接
 
 			// TODO 3.3 处理该新连接请求的业务方法
-			dealConn := NewConnection(conn, cid, s.Router)
+			dealConn := NewConnection(conn, cid, s.msgHandler)
 			cid++
 
 			// 3.4 启动当前连接的处理业务
@@ -96,21 +85,21 @@ func (s *Server) Serve() {
 }
 
 // 注册路由业务方法，供客户端连接处理使用
-func (s *Server) AddRouter(router ziface.IRouter) {
-	s.Router = router
+func (s *Server) AddRouter(msgId uint32, router ziface.IRouter) {
+	s.msgHandler.AddRouter(msgId, router)
 
 	fmt.Println("[START] AddRouter success")
 }
 
 // 创建服务器句柄
-func NewServe(name string) ziface.IServer {
+func NewServe() ziface.IServer {
 	utils.GlobalObject.Reload()
 	s := &Server{
-		Name:      utils.GlobalObject.Name,
-		IPVersion: "tcp4",
-		IP:        utils.GlobalObject.Host,
-		Port:      utils.GlobalObject.TcpPort,
-		Router:    nil,
+		Name:       utils.GlobalObject.Name,
+		IPVersion:  "tcp4",
+		IP:         utils.GlobalObject.Host,
+		Port:       utils.GlobalObject.TcpPort,
+		msgHandler: NewMsgHandler(),
 	}
 	return s
 }
