@@ -7,14 +7,27 @@ import (
 )
 
 type GlobalObj struct {
+	/*
+		server
+	*/
 	TcpServer ziface.IServer // 当前Zinx正在启动服务的Server对象
 	Host      string         // 当前服务器主机IP
 	TcpPort   int            // 当前服务器主机监听端口号
 	Name      string         // 当前服务器名称
-	Version   string         // 当前Zinx版本号
 
-	MaxPacketSize uint32 // 读取数据包的最大值
-	MaxConn       int    // 当前服务器主机允许的最大连接个数
+	/*
+		zinx
+	*/
+	Version          string // 当前Zinx版本号
+	MaxPacketSize    uint32 // 读取数据包的最大值
+	MaxConn          int    // 当前服务器主机允许的最大连接个数
+	WorkerPoolSize   uint32 // 工作池最大数量
+	MaxWorkerTaskLen uint32 // 每条任务最大存储量
+
+	/*
+		config file path
+	*/
+	ConfFilePath string
 }
 
 // 定义一个全局对象
@@ -44,6 +57,10 @@ func init() {
 		Host:          "0.0.0.0",
 		MaxConn:       12000,
 		MaxPacketSize: 4096,
+		ConfFilePath:  "conf/zinx.json",
+
+		WorkerPoolSize:   10,
+		MaxWorkerTaskLen: 1024,
 	}
 	// 从配置文件加载用户配置的参数
 	GlobalObject.Reload()

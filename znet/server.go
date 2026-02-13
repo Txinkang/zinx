@@ -21,6 +21,19 @@ type Server struct {
 	msgHandler ziface.IMsgHandle
 }
 
+// 创建服务器句柄
+func NewServe() ziface.IServer {
+	utils.GlobalObject.Reload()
+	s := &Server{
+		Name:       utils.GlobalObject.Name,
+		IPVersion:  "tcp4",
+		IP:         utils.GlobalObject.Host,
+		Port:       utils.GlobalObject.TcpPort,
+		msgHandler: NewMsgHandler(),
+	}
+	return s
+}
+
 // 启动服务器
 func (s *Server) Start() {
 	fmt.Printf("[START]Server name:%s,listenner at IP: %s, Ports %d is starting\n", s.Name, s.IP, s.Port)
@@ -28,6 +41,8 @@ func (s *Server) Start() {
 
 	// 开启一个go去做服务器端Linster业务
 	go func() {
+		// 0、开启工作池
+		s.msgHandler.StartWorkerPool()
 		// 1、获取一个TCP的Addr
 		addr, err := net.ResolveTCPAddr(s.IPVersion, fmt.Sprintf("%s:%d", s.IP, s.Port))
 		if err != nil {
@@ -89,17 +104,4 @@ func (s *Server) AddRouter(msgId uint32, router ziface.IRouter) {
 	s.msgHandler.AddRouter(msgId, router)
 
 	fmt.Println("[START] AddRouter success")
-}
-
-// 创建服务器句柄
-func NewServe() ziface.IServer {
-	utils.GlobalObject.Reload()
-	s := &Server{
-		Name:       utils.GlobalObject.Name,
-		IPVersion:  "tcp4",
-		IP:         utils.GlobalObject.Host,
-		Port:       utils.GlobalObject.TcpPort,
-		msgHandler: NewMsgHandler(),
-	}
-	return s
 }

@@ -3,6 +3,7 @@ package znet
 import (
 	"errors"
 	"fmt"
+	"github.com/Txinkang/zinx/utils"
 	"github.com/Txinkang/zinx/ziface"
 	"io"
 	"net"
@@ -78,8 +79,12 @@ func (c *Connection) StartReader() {
 			msg:  msg,
 		}
 
-		// 调用业务
-		go c.MsgHandler.DoMsgHandler(&req)
+		// 调用业务，开启工作池了就走工作池逻辑，没开启就还是临时goroutine逻辑
+		if utils.GlobalObject.WorkerPoolSize > 0 {
+			c.MsgHandler.SendMsgToTaskQueue(&req)
+		} else {
+			go c.MsgHandler.DoMsgHandler(&req)
+		}
 	}
 }
 
