@@ -7,9 +7,12 @@ import (
 	"github.com/Txinkang/zinx/ziface"
 	"io"
 	"net"
+	"sync"
 )
 
 type Connection struct {
+	// 当前连接属于哪个Server
+	TcpServer ziface.IServer
 	// 当前连接的socket TCP 套接字
 	Conn *net.TCPConn
 	// 当前连接的ID，也可以称为SessionID，ID全局唯一
@@ -20,20 +23,34 @@ type Connection struct {
 	MsgHandler ziface.IMsgHandle
 	// 告知该连接已经退出的channel
 	ExitBuffChan chan bool
-	// 读写分离消息通道
+	// 读写分离消息通道，无缓冲管道
 	msgChan chan []byte
+	// 读写分离消息通道，有缓冲管道
+	msgBuffChan chan []byte
+	// 连接属性
+	property map[string]interface{}
+	// 设置属性锁
+	propertyLock sync.RWMutex
 }
 
 // NewConnection 创建连接方法
-func NewConnection(conn *net.TCPConn, connID uint32, msgHandler ziface.IMsgHandle) *Connection {
-	return &Connection{
+func NewConnection(server ziface.IServer, conn *net.TCPConn, connID uint32, msgHandler ziface.IMsgHandle) *Connection {
+	// 初始化conn
+	c := &Connection{
+		TcpServer:    server,
 		Conn:         conn,
 		ConnID:       connID,
 		isClosed:     false,
 		MsgHandler:   msgHandler,
 		ExitBuffChan: make(chan bool, 1),
 		msgChan:      make(chan []byte),
+		msgBuffChan:  make(chan []byte, utils.GlobalObject.MaxWorkerTaskLen),
+		property:     make(map[string]interface{}),
 	}
+	// 把当前conn加入到连接管理中
+	c.TcpServer.GetConnMgr().Add(c)
+
+	return c
 }
 
 // StartReader 处理conn读数据
@@ -50,7 +67,7 @@ func (c *Connection) StartReader() {
 		if _, err := io.ReadFull(c.GetTCPConnection(), headData); err != nil {
 			fmt.Println("Read Error:", err)
 			c.ExitBuffChan <- true
-			continue
+			return
 		}
 
 		// 拆包，获取头信息
@@ -58,7 +75,7 @@ func (c *Connection) StartReader() {
 		if err != nil {
 			fmt.Println("UnPack Error:", err)
 			c.ExitBuffChan <- true
-			continue
+			return
 		}
 
 		// 获取data
@@ -68,7 +85,7 @@ func (c *Connection) StartReader() {
 			if _, err := io.ReadFull(c.GetTCPConnection(), data); err != nil {
 				fmt.Println("Read Error:", err)
 				c.ExitBuffChan <- true
-				continue
+				return
 			}
 		}
 		msg.SetData(data)
@@ -95,10 +112,22 @@ func (c *Connection) StartWriter() {
 
 	for {
 		select {
+		// 无缓冲
 		case data := <-c.msgChan:
 			if _, err := c.Conn.Write(data); err != nil {
-				fmt.Println("Write Error:", err)
+				fmt.Println("send data Error:", err)
 				return
+			}
+		// 有缓冲
+		case data, ok := <-c.msgBuffChan:
+			if ok {
+				if _, err := c.Conn.Write(data); err != nil {
+					fmt.Println("send buff data Error:", err)
+					return
+				}
+			} else {
+				fmt.Println("msgBuffChan is Closed")
+				break
 			}
 		case <-c.ExitBuffChan:
 			return
@@ -110,23 +139,18 @@ func (c *Connection) Start() {
 	go c.StartReader()
 	go c.StartWriter()
 
-	// 一直阻塞，得到退出消息就退出
-	for {
-		select {
-		case <-c.ExitBuffChan:
-			return
-		}
-	}
+	// 创建连接时执行的钩子方法
+	c.TcpServer.CallOnConnStart(c)
 }
-
 func (c *Connection) Stop() {
 	// 如果当前连接已关闭
-	if c.isClosed {
+	if c.isClosed == true {
 		return
 	}
 	c.isClosed = true
 
-	// TODO Connection Stop() 如果用户注册了该连接的关闭回调业务，则在此调用
+	// 断开连接时执行的钩子方法
+	c.TcpServer.CallOnConnStop(c)
 
 	// 关闭Socket连接
 	c.Conn.Close()
@@ -134,8 +158,12 @@ func (c *Connection) Stop() {
 	// 通知该连接已关闭
 	c.ExitBuffChan <- true
 
+	// 从连接管理器中删除
+	c.TcpServer.GetConnMgr().Remove(c)
+
 	// 关闭该连接所有管道
 	close(c.ExitBuffChan)
+	close(c.msgBuffChan)
 }
 func (c *Connection) GetTCPConnection() *net.TCPConn {
 	return c.Conn
@@ -163,4 +191,41 @@ func (c *Connection) SendMsg(msgId uint32, data []byte) error {
 	c.msgChan <- msg
 
 	return nil
+}
+func (c *Connection) SendBuffMsg(msgId uint32, data []byte) error {
+	if c.isClosed {
+		return errors.New("Connection is Closed")
+	}
+
+	// 封包
+	dp := NewDataPack()
+	msg, err := dp.Pack(NewMsgPackage(msgId, data))
+	if err != nil {
+		fmt.Println("Pack Error msg id = :", msgId)
+		return errors.New("pack Error")
+	}
+
+	// 发给读写channel
+	c.msgBuffChan <- msg
+
+	return nil
+}
+func (c *Connection) SetProperty(key string, value interface{}) {
+	c.propertyLock.Lock()
+	defer c.propertyLock.Unlock()
+	c.property[key] = value
+}
+func (c *Connection) GetProperty(key string) (interface{}, error) {
+	c.propertyLock.Lock()
+	defer c.propertyLock.Unlock()
+	if value, ok := c.property[key]; ok {
+		return value, nil
+	} else {
+		return nil, errors.New("no property found")
+	}
+}
+func (c *Connection) RemoveProperty(key string) {
+	c.propertyLock.Lock()
+	defer c.propertyLock.Unlock()
+	delete(c.property, key)
 }

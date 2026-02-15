@@ -14,8 +14,16 @@ type IConnection interface {
 	GetConnID() uint32
 	// 获取远程客户端地址信息
 	RemoteAddr() net.Addr
-	//发送message数据到客户端
+	//发送message数据到客户端，无缓冲
 	SendMsg(msgId uint32, data []byte) error
+	//发送message数据到客户端，有缓冲
+	SendBuffMsg(msgId uint32, data []byte) error
+	// 设置连接属性
+	SetProperty(key string, value interface{})
+	// 获取连接属性
+	GetProperty(key string) (interface{}, error)
+	// 移除连接属性
+	RemoveProperty(key string)
 }
 
 // HandFunc 统一处理连接业务的接口,socket原声连接、请求数据、请求数据长度
